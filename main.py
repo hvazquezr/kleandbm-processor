@@ -40,7 +40,9 @@ def main():
 
 def process_message(msg, db):
     topic = msg.topic()
+    message_time = datetime.datetime.now(datetime.UTC)
     data = json.loads(msg.value().decode('utf-8'))
+    data['lastModified'] = message_time
     print(f"Topic: {topic} \n Data:{data}")
     changeId = data.get("changeId")
     project_id = msg.key().decode('utf-8') 
@@ -63,7 +65,7 @@ def process_message(msg, db):
     
     changes_collection.update_one(
         {'_id': changeId},
-        {'$setOnInsert': {'timestamp': datetime.datetime.now(datetime.UTC), 'projectId': project_id}},
+        {'$setOnInsert': {'timestamp': message_time, 'projectId': project_id}},
         upsert=True
     )
 
