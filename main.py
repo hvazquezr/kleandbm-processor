@@ -20,7 +20,7 @@ def main():
             'group.id': 'python_processor',
     }
     consumer = Consumer(kafka_config)
-    consumer.subscribe(['project-updates', 'table-updates', 'relationship-updates', 'node-updates'])
+    consumer.subscribe(['project-updates', 'table-updates', 'relationship-updates', 'node-updates', 'change-updates'])
     print(f"Ready to process Kafka messages from {settings.kafka_server} to {settings.mongo_db}.")
     
     try:
@@ -42,32 +42,37 @@ def process_message(msg, db):
     topic = msg.topic()
     message_time = datetime.datetime.now(datetime.UTC)
     data = json.loads(msg.value().decode('utf-8'))
-    data['lastModified'] = message_time
-    print(f"Topic: {topic} \n Data:{data}")
-    changeId = data.get("changeId")
-    project_id = msg.key().decode('utf-8') 
     entity_type = topic.replace("-updates", "")  # project, tables, relationship, node
     collection = db[entity_type]
-    versions_collection = db[entity_type + "_versions"]
-    changes_collection = db["change"]
+    print(f"Topic: {topic} \n Data:{data}")
+    if entity_type == "change": # If it's change just update the change collection.
+        print
+        collection.update_one({"_id": data["id"]}, {"$set": data}, upsert=True)
+    else:
+        data['lastModified'] = message_time
+        changeId = data.get("changeId")
+        project_id = msg.key().decode('utf-8') 
 
-    # Update the main collection (upsert=true creates new if non-existent)
-    collection.update_one({"_id": data["id"]}, {"$set": data}, upsert=True)
+        versions_collection = db[entity_type + "_versions"]
+        changes_collection = db["change"]
 
-    # Record changes to the versions collection
-    version_record = {
-        #"change_id": data["change_id"],
-        "id": data["id"],
-        "changeId": changeId,
-        "changes": {k: v for k, v in data.items() if k not in ["_id", "changeId", "id"]}
-    }
-    versions_collection.insert_one(version_record)
-    
-    changes_collection.update_one(
-        {'_id': changeId},
-        {'$setOnInsert': {'timestamp': message_time, 'projectId': project_id}},
-        upsert=True
-    )
+        # Update the main collection (upsert=true creates new if non-existent)
+        collection.update_one({"_id": data["id"]}, {"$set": data}, upsert=True)
+
+        # Record changes to the versions collection
+        version_record = {
+            #"change_id": data["change_id"],
+            "id": data["id"],
+            "changeId": changeId,
+            "changes": {k: v for k, v in data.items() if k not in ["_id", "changeId", "id"]}
+        }
+        versions_collection.insert_one(version_record)
+        
+        changes_collection.update_one(
+            {'_id': changeId},
+            {'$setOnInsert': {'timestamp': message_time, 'projectId': project_id}},
+            upsert=True
+        )
 
 if __name__ == "__main__":
     main()
