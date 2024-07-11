@@ -12,12 +12,12 @@ def main():
     
     # Kafka Consumer Setup
     kafka_config = {
-            'bootstrap.servers': settings.kafka_server,
-            'security.protocol': 'SASL_SSL',
-            'sasl.mechanism': 'PLAIN',
-            'sasl.username': settings.kafka_username,
-            'sasl.password': settings.kafka_password,
-            'group.id': 'python_processor',
+        'bootstrap.servers': settings.kafka_server,
+        'security.protocol': 'SASL_SSL',
+        'sasl.mechanism': 'PLAIN',
+        'sasl.username': settings.kafka_username,
+        'sasl.password': settings.kafka_password,
+        'group.id': 'python_processor',
     }
     consumer = Consumer(kafka_config)
     consumer.subscribe(['project-updates', 'table-updates', 'relationship-updates', 'node-updates', 'change-updates'])
@@ -46,7 +46,6 @@ def process_message(msg, db):
     collection = db[entity_type]
     print(f"Topic: {topic} \n Data:{data}")
     if entity_type == "change": # If it's change just update the change collection.
-        print
         collection.update_one({"_id": data["id"]}, {"$set": data}, upsert=True)
     else:
         data['lastModified'] = message_time
@@ -59,18 +58,18 @@ def process_message(msg, db):
         # Update the main collection (upsert=true creates new if non-existent)
         collection.update_one({"_id": data["id"]}, {"$set": data}, upsert=True)
 
-        # Record changes to the versions collection
-        version_record = {
-            #"change_id": data["change_id"],
-            "id": data["id"],
-            "changeId": changeId,
-            "changes": {k: v for k, v in data.items() if k not in ["_id", "changeId", "id"]}
-        }
-        versions_collection.insert_one(version_record)
+        # Retrieve the updated object
+        updated_object = collection.find_one({"_id": data["id"]})
+
+        # Remove the _id field from the updated object
+        updated_object.pop("_id", None)
+
+        # Insert the updated object into the versions collection
+        versions_collection.insert_one(updated_object)
         
         changes_collection.update_one(
             {'_id': changeId},
-            {'$setOnInsert': {'timestamp': message_time, 'projectId': project_id}},
+            {'$set': {'timestamp': message_time, 'projectId': project_id}},
             upsert=True
         )
 
